@@ -86,7 +86,7 @@ if st.button("Predict Risk"):
     if prediction == 1:
         st.error(f" High risk — predicted probability: {proba:.1%}")
     else:
-        st.success(f"✅ Low risk — predicted probability: {proba:.1%}")
+        st.success(f" Low risk — predicted probability: {proba:.1%}")
 
     if tree_std > 0.15 or out_of_range:
         warning_msg = " Lower confidence prediction."
@@ -105,7 +105,7 @@ if st.button("Predict Risk"):
         shap.Explanation(
             values=shap_values[0, :, 1],
             base_values=explainer.expected_value[1],
-            data=input_scaled_df.iloc[0],
+            data=input_df.iloc[0],  # raw values instead of scaled, for readability
             feature_names=input_df.columns.tolist()
         ),
         show=False
