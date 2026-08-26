@@ -8,6 +8,20 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix, classification_report
 
 df = pd.read_csv('data/diabetes_clean.csv')
+
+# Save the medians used for imputation so the app can apply the same logic to live input
+raw_df = pd.read_csv('data/diabetes.csv')
+cols_with_missing = ['glucose', 'blood_pressure', 'skin_thickness', 'insulin', 'bmi']
+medians = {}
+for col in cols_with_missing:
+    valid_values = raw_df[raw_df[col] != 0][col]
+    medians[col] = valid_values.median()
+
+os.makedirs('models', exist_ok=True)
+with open('models/impute_medians.json', 'w') as f:
+    json.dump(medians, f, indent=2)
+print("Saved imputation medians:", medians)
+
 X = df.drop('outcome', axis=1)
 y = df['outcome']
 
@@ -33,11 +47,7 @@ print(classification_report(y_test, y_pred))
 print("Confusion matrix:\n", confusion_matrix(y_test, y_pred))
 print(metrics)
 
-os.makedirs('models', exist_ok=True)
 joblib.dump(model, 'models/rf_model.pkl')
 joblib.dump(scaler, 'models/scaler.pkl')
 with open('models/metrics.json', 'w') as f:
     json.dump(metrics, f, indent=2)
-
-
-

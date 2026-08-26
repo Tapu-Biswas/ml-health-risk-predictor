@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import joblib
+import json
 import shap
 import matplotlib.pyplot as plt
 
@@ -11,9 +13,11 @@ def load_artifacts():
     model = joblib.load('models/rf_model.pkl')
     scaler = joblib.load('models/scaler.pkl')
     explainer = joblib.load('models/shap_explainer.pkl')
-    return model, scaler, explainer
+    with open('models/impute_medians.json') as f:
+        medians = json.load(f)
+    return model, scaler, explainer, medians
 
-model, scaler, explainer = load_artifacts()
+model, scaler, explainer, impute_medians = load_artifacts()
 
 st.title("🩺 Diabetes Risk Predictor")
 st.write("Enter patient health metrics below to estimate diabetes risk, with an explanation of why.")
@@ -31,6 +35,26 @@ with col2:
     age = st.number_input("Age", min_value=1, max_value=120, value=30)
 
 if st.button("Predict Risk"):
+    # Treat 0 as "missing" for these fields, same as training did — impute with training medians
+    raw_input = {
+        'glucose': glucose, 'blood_pressure': blood_pressure,
+        'skin_thickness': skin_thickness, 'insulin': insulin, 'bmi': bmi
+    }
+    imputed_flags = []
+    for field, value in raw_input.items():
+        if value == 0:
+            raw_input[field] = impute_medians[field]
+            imputed_flags.append(field)
+
+    glucose = raw_input['glucose']
+    blood_pressure = raw_input['blood_pressure']
+    skin_thickness = raw_input['skin_thickness']
+    insulin = raw_input['insulin']
+    bmi = raw_input['bmi']
+
+    if imputed_flags:
+        st.info(f"ℹ️ You left {', '.join(imputed_flags)} as 0 — treated as unknown and filled with typical values for prediction.")
+
     input_df = pd.DataFrame([{
         'pregnancies': pregnancies,
         'glucose': glucose,
@@ -46,11 +70,31 @@ if st.button("Predict Risk"):
     proba = model.predict_proba(input_scaled)[0][1]
     prediction = model.predict(input_scaled)[0]
 
+    # Confidence check: how much do individual trees disagree?
+    tree_predictions = np.array([tree.predict_proba(input_scaled)[0][1] for tree in model.estimators_])
+    tree_std = tree_predictions.std()
+
+    # Out-of-distribution check: is this input far outside the training data's range?
+    training_ranges = {
+        'pregnancies': (0, 17), 'glucose': (44, 199), 'blood_pressure': (24, 122),
+        'skin_thickness': (7, 99), 'insulin': (14, 846), 'bmi': (18.2, 67.1),
+        'diabetes_pedigree': (0.078, 2.42), 'age': (21, 81)
+    }
+    out_of_range = [f for f, (lo, hi) in training_ranges.items() if not (lo <= input_df[f].values[0] <= hi)]
+
     st.divider()
     if prediction == 1:
-        st.error(f"⚠️ High risk — predicted probability: {proba:.1%}")
+        st.error(f" High risk — predicted probability: {proba:.1%}")
     else:
         st.success(f"✅ Low risk — predicted probability: {proba:.1%}")
+
+    if tree_std > 0.15 or out_of_range:
+        warning_msg = " Lower confidence prediction."
+        if out_of_range:
+            warning_msg += f" Input values for {', '.join(out_of_range)} are outside the range seen in training data."
+        if tree_std > 0.15:
+            warning_msg += f" Model's internal trees disagree significantly (std: {tree_std:.2f})."
+        st.warning(warning_msg)
 
     st.subheader("Why this prediction?")
     input_scaled_df = pd.DataFrame(input_scaled, columns=input_df.columns)
@@ -67,6 +111,7 @@ if st.button("Predict Risk"):
         show=False
     )
     st.pyplot(fig)
+    st.caption("Note: glucose level tends to dominate this model's predictions, sometimes outweighing other risk factors. This reflects both a genuine clinical pattern (glucose is the primary diabetes marker) and a known limitation of tree-based models trained on this dataset size — worth keeping in mind when interpreting borderline cases.")
 
 st.divider()
 st.caption("Model: RandomForestClassifier trained on the Pima Indians Diabetes Dataset. Explanations via SHAP. Not a substitute for medical diagnosis.")
