@@ -17,7 +17,11 @@ def load_artifacts():
         medians = json.load(f)
     return model, scaler, explainer, medians
 
-model, scaler, explainer, impute_medians = load_artifacts()
+try:
+    model, scaler, explainer, impute_medians = load_artifacts()
+except Exception as e:
+    st.error("⚠️ This app couldn't load its model files and can't make predictions right now. Please try again shortly, or contact the maintainer if this persists.")
+    st.stop()
 
 st.title("🩺 Diabetes Risk Predictor")
 st.write("Enter patient health metrics below to estimate diabetes risk, with an explanation of why.")
@@ -84,12 +88,12 @@ if st.button("Predict Risk"):
 
     st.divider()
     if prediction == 1:
-        st.error(f" High risk — predicted probability: {proba:.1%}")
+        st.error(f"⚠️ High risk — predicted probability: {proba:.1%}")
     else:
-        st.success(f" Low risk — predicted probability: {proba:.1%}")
+        st.success(f"✅ Low risk — predicted probability: {proba:.1%}")
 
     if tree_std > 0.15 or out_of_range:
-        warning_msg = " Lower confidence prediction."
+        warning_msg = "⚠️ Lower confidence prediction."
         if out_of_range:
             warning_msg += f" Input values for {', '.join(out_of_range)} are outside the range seen in training data."
         if tree_std > 0.15:
@@ -105,7 +109,7 @@ if st.button("Predict Risk"):
         shap.Explanation(
             values=shap_values[0, :, 1],
             base_values=explainer.expected_value[1],
-            data=input_df.iloc[0],  # raw values instead of scaled, for readability
+            data=input_df.iloc[0],
             feature_names=input_df.columns.tolist()
         ),
         show=False
